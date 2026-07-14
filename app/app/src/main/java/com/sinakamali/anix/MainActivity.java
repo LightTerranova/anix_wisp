@@ -1,11 +1,14 @@
 package com.sinakamali.anix;
 
+import android.Manifest;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
@@ -19,9 +22,13 @@ public class MainActivity extends AppCompatActivity {
     private AppBarConfiguration appBarConfiguration;
     private ActivityMainBinding binding;
 
+    private static final int BLE_PERMISSION_REQUEST_CODE = 1001;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        requestBlePermissions();
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
@@ -40,6 +47,21 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
+    }
+
+    // rt perms for BLE
+    private void requestBlePermissions() {
+        String[] perms;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            perms = new String[]{
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_ADVERTISE,
+            };
+        } else {
+            perms = new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+        }
+        ActivityCompat.requestPermissions(this, perms, BLE_PERMISSION_REQUEST_CODE);
     }
 
     @Override
