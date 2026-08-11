@@ -10,7 +10,6 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
 // Resolvable private UUID based on BLE IRK
-// Layout prand 3 bytes || truncated ah(IRK, prand) 13 bytes
 public final class ResolvableUuid {
     private static final int PRAND_BYTES = 3;
     private static final int HASH_BYTES = 13;
@@ -40,7 +39,6 @@ public final class ResolvableUuid {
         }
     }
 
-    // ah(irk, prand) = AES(irk, padding || prand)
     // I truncate to 108 bits because we have the space in the uuid
     private static byte[] ah(byte[] irk, byte[] prand) throws Exception {
         byte[] block = new byte[16];
