@@ -10,7 +10,6 @@ import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.Context;
@@ -22,6 +21,9 @@ import androidx.annotation.RequiresApi;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -29,9 +31,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 // BLE Insecure L2CAP transport for Anix
 public class BleL2capTransport {
-
-    private static final ParcelUuid L2CAP_CoC_UUID =
-            new ParcelUuid(UUID.fromString("d490e681-9dba-4802-99f3-1ca848d3e908"));
 
     // Some recovery for stalled transport
     // In most cases transport shouldn't fail
@@ -54,6 +53,7 @@ public class BleL2capTransport {
     private BluetoothServerSocket serverSocket;
     private AdvertiseCallback advertiseCallback;
     private ScanCallback scanCallback;
+    private UUID currentAdvertisedUuid;
 
     public BleL2capTransport(Context context) {
         BluetoothManager manager =
@@ -125,13 +125,14 @@ public class BleL2capTransport {
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
     private DiscoveredServer scanForServer(long timeoutMillis) throws Exception {
+        final byte[] irk = IrkStore.getIrk();
+
         final AtomicReference<BluetoothDevice> foundDevice = new AtomicReference<>(null);
         final AtomicReference<Integer> foundPsm = new AtomicReference<>(null);
         final CountDownLatch latch = new CountDownLatch(1);
 
-        ScanFilter filter = new ScanFilter.Builder()
-                .setServiceData(L2CAP_CoC_UUID, null)
-                .build();
+        // Log UUIDs we already tried and rejected
+        final Set<UUID> rejected = Collections.synchronizedSet(new HashSet<UUID>());
 
         ScanSettings settings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -143,17 +144,35 @@ public class BleL2capTransport {
                 if (result == null || result.getScanRecord() == null) {
                     return;
                 }
-                byte[] serviceData = result.getScanRecord().getServiceData(L2CAP_CoC_UUID);
-                if (serviceData == null || serviceData.length < 2) {
+                Map<ParcelUuid, byte[]> serviceData = result.getScanRecord().getServiceData();
+                if (serviceData == null || serviceData.isEmpty()) {
                     return;
                 }
-                int psm = ByteBuffer.wrap(serviceData).getShort() & 0xFFFF;
-                // Take the first server
-                if (foundDevice.compareAndSet(null, result.getDevice())) {
-                    foundPsm.set(psm);
-                    System.out.println("Found L2CAP server: " + result.getDevice().getAddress()
-                            + " PSM " + psm + " (RSSI " + result.getRssi() + ")");
-                    latch.countDown();
+
+                for (Map.Entry<ParcelUuid, byte[]> entry : serviceData.entrySet()) {
+                    byte[] value = entry.getValue();
+                    if (value == null || value.length < 2) {
+                        continue;
+                    }
+                    UUID candidate = entry.getKey().getUuid();
+                    if (rejected.contains(candidate)) {
+                        continue;
+                    }
+                    if (!ResolvableUuid.resolve(candidate, irk)) {
+                        rejected.add(candidate);
+                        continue;
+                    }
+
+                    int psm = ByteBuffer.wrap(value).getShort() & 0xFFFF;
+                    // Take the first server
+                    if (foundDevice.compareAndSet(null, result.getDevice())) {
+                        foundPsm.set(psm);
+                        System.out.println("Resolved L2CAP server: " + result.getDevice().getAddress()
+                                + " PSM " + psm + " UUID " + candidate
+                                + " (RSSI " + result.getRssi() + ")");
+                        latch.countDown();
+                    }
+                    return;
                 }
             }
 
@@ -164,8 +183,7 @@ public class BleL2capTransport {
             }
         };
 
-        adapter.getBluetoothLeScanner().startScan(
-                Collections.singletonList(filter), settings, scanCallback);
+        adapter.getBluetoothLeScanner().startScan(null, settings, scanCallback);
         System.out.println("Scanning for L2CAP servers...");
 
         boolean signalled = latch.await(timeoutMillis, TimeUnit.MILLISECONDS);
@@ -182,7 +200,17 @@ public class BleL2capTransport {
     // BLE adv and scan helpers from Shroud L2CAP
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
-    private void startAdvertising(int psm) {
+    private void startAdvertising(int psm) throws IOException {
+        byte[] irk = IrkStore.getIrk();
+        // new prand every time
+        try {
+            currentAdvertisedUuid = ResolvableUuid.generate(irk);
+        } catch (Exception e) {
+            throw new IOException("Failed to derive resolvable UUID", e);
+        }
+        ParcelUuid advUuid = new ParcelUuid(currentAdvertisedUuid);
+        System.out.println("Advertising under resolvable UUID " + currentAdvertisedUuid);
+
         byte[] psmBytes = ByteBuffer.allocate(2).putShort((short) psm).array();
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
@@ -191,7 +219,7 @@ public class BleL2capTransport {
 
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
-                .addServiceData(L2CAP_CoC_UUID, psmBytes)
+                .addServiceData(advUuid, psmBytes)
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {
@@ -215,6 +243,7 @@ public class BleL2capTransport {
             adapter.getBluetoothLeAdvertiser().stopAdvertising(advertiseCallback);
             advertiseCallback = null;
         }
+        currentAdvertisedUuid = null;
     }
 
     @SuppressLint("MissingPermission")

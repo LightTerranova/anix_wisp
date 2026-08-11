@@ -54,6 +54,18 @@ public class SecondFragment extends Fragment {
     // How long the client scans for server before giving up
     private static final long SCAN_TIMEOUT_MS = 30000;
 
+    // Takes whatever is in the IRK box
+    private void setIrk(View view) {
+        try {
+            IrkStore.setIrkFromHex(String.valueOf(binding.irkInput.getText()));
+            Toast.makeText(getActivity(), "IRK set for this session", Toast.LENGTH_SHORT).show();
+            System.out.println("IRK set (" + IrkStore.getIrk().length + " bytes)");
+        } catch (IllegalArgumentException e) {
+            Toast.makeText(getActivity(), e.getMessage(), Toast.LENGTH_LONG).show();
+            System.out.println("IRK rejected: " + e.getMessage());
+        }
+    }
+
     private void doCryptoTest(View view) {
         StringBuilder messageText = new StringBuilder();
         for (int i = 0; i < 256; i++) {
@@ -563,6 +575,12 @@ public class SecondFragment extends Fragment {
             throw new RuntimeException(e);
         }
 
+        // Tell user IRK already set
+        if (IrkStore.isSet()) {
+            binding.irkInput.setHint("IRK already set this session");
+        }
+
+        binding.setIrkButton.setOnClickListener(this::setIrk);
         binding.cryptobutton.setOnClickListener(this::doCryptoTest);
         binding.componentbutton.setOnClickListener(this::doCreateObjectTest);
         binding.messagebutton.setOnClickListener(this::sendMessagesOverBluetooth);

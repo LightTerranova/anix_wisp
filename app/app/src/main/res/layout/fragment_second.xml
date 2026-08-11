@@ -72,5 +72,32 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/cryptobutton" />
 
+        <!-- TODO: remove android text after testing -->
+        <EditText
+            android:id="@+id/irkInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:hint="IRK 32 hex chars"
+            android:importantForAutofill="no"
+            android:inputType="textNoSuggestions"
+            android:text="000102030405060708090a0b0c0d0e0f"
+            android:maxLength="47"
+            android:maxLines="1"
+            android:textSize="14sp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/receivebutton" />
+
+        <Button
+            android:id="@+id/setIrkButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Set IRK"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/irkInput" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.core.widget.NestedScrollView>
