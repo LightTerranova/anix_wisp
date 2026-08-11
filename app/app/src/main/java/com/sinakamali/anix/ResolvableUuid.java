@@ -17,6 +17,7 @@ public final class ResolvableUuid {
 
     private ResolvableUuid() { }
     // gen prand and UUID
+    // Layout 3 byte prand with 13 byte hash
     public static UUID generate(byte[] irk) throws Exception {
         byte[] prand = new byte[PRAND_BYTES];
         RNG.nextBytes(prand);
@@ -40,6 +41,7 @@ public final class ResolvableUuid {
     }
 
     // I truncate to 108 bits because we have the space in the uuid
+    // ah(irk and prand) = AES(irk, padding and concat prand)
     private static byte[] ah(byte[] irk, byte[] prand) throws Exception {
         byte[] block = new byte[16];
         System.arraycopy(prand, 0, block, 16 - prand.length, prand.length);
