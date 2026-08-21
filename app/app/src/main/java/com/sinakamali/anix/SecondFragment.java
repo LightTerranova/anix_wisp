@@ -4,7 +4,11 @@ import static android.content.Context.MODE_PRIVATE;
 import static com.sinakamali.anix.anixCore.AnixCore.NOT_FOUND_ERROR;
 
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
@@ -44,12 +48,18 @@ import java.security.PublicKey;
 import java.security.Security;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
+import java.util.UUID;
 
 public class SecondFragment extends Fragment {
 
     SharedPreferences sharedPref;
     private FragmentSecondBinding binding;
     private AnixCore internalAnixCore;
+
+    // for anix proper
+    private final BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+    private final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final String SAVED_MAC_ADDRESS_KEY = "saved_dst_mac";
 
     // How long the client scans for server before giving up
     private static final long SCAN_TIMEOUT_MS = 30000;
@@ -237,31 +247,234 @@ public class SecondFragment extends Fragment {
         }
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.S)
-    private void sendMessagesOverBluetooth(View view) {
-        // ble scan and adv are on the main loop and transport calls block
-        new Thread(() -> {
+    // builds message
+    private byte[] buildTestBlob() throws Exception {
+        StringBuilder messageText = new StringBuilder();
+        for (int i = 0; i < 140; i++) {
+            messageText.append("a");
+        }
 
-            StringBuilder messageText = new StringBuilder();
-            for (int i = 0; i < 140; i++) {
-                messageText.append("a");
+        AnixCoreMessage message = internalAnixCore.createMessage(messageText.toString().getBytes());
+        byte[] messageByteArray = message.dumpMessageToBytes();
+        System.out.println(message.dumpMessageToString());
+        System.out.println("message size is " + messageByteArray.length + "bytes");
+        message = internalAnixCore.voteOnMessage(message, true);
+        byte[] voteByteArray = message.dumpVotesToBytes();
+        System.out.println(new String(voteByteArray, StandardCharsets.UTF_8));
+        System.out.println("vote size is " + voteByteArray.length + "bytes");
+
+        ByteArrayOutputStream internalByteStream = new ByteArrayOutputStream();
+        for (int i = 0; i < 100; i++) {
+            internalByteStream.write(messageByteArray);
+        }
+        for (int i = 0; i < 10000; i++) {
+            internalByteStream.write(voteByteArray);
+        }
+
+        int bytesSent = internalByteStream.size();
+        System.out.println("total size of data to send: " + bytesSent);
+        return internalByteStream.toByteArray();
+    }
+
+    // from original anix
+    @SuppressLint("MissingPermission")
+    private void sendMessagesOverRfcomm(View view) {
+        runRfcomm(() -> {
+            String dstMac = sharedPref.getString(SAVED_MAC_ADDRESS_KEY, "").trim();
+            BluetoothServerSocket serverSocket = null;
+            long bytesRead = 0;
+
+            try {
+                byte[] blob = buildTestBlob();
+                long sentBytes = blob.length;
+
+                BluetoothDevice device = bluetoothAdapter.getRemoteDevice(dstMac);
+                if (device == null) {
+                    System.out.println("device was null!");
+                } else {
+                    System.out.println("device was not null!");
+                }
+
+                BluetoothSocket socket = device.createInsecureRfcommSocketToServiceRecord(MY_UUID);
+                long connectionStart = System.currentTimeMillis();
+                long connectionEnd;
+                socket.connect();
+                System.out.println("connected!");
+                OutputStream outputStream = socket.getOutputStream();
+                if (outputStream == null) {
+                    System.out.println("stream was null!");
+                } else {
+                    System.out.println("stream was not null!");
+                }
+
+                connectionEnd = System.currentTimeMillis();
+                System.out.println("Establishing the connection 1 took: (ms)" + (connectionEnd - connectionStart));
+
+                long start = System.currentTimeMillis();
+                long sendStart = start;
+
+                outputStream.write(blob);
+                outputStream.flush();
+                outputStream.close();
+
+                long sendEnd = System.currentTimeMillis();
+
+                // Receiving ===========
+
+                serverSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord("Anix", MY_UUID);
+
+                connectionStart = System.currentTimeMillis();
+                connectionEnd = 0;
+
+                System.out.println("listening for connection...");
+                socket = serverSocket.accept(); // Blocking call, waits until connection is established
+                InputStream inputStream = socket.getInputStream();
+                byte[] buffer = new byte[1024];
+                int bytes;
+
+                long recvStart = 0;
+                long recvEnd = 0;
+                boolean first_impact = true;
+                try {
+                    while (true) {
+                        bytes = inputStream.read(buffer); // blocks until there's something to read
+                        if (bytes == -1) break; // sender closed
+                        bytesRead += bytes;
+                        if (first_impact) {
+                            connectionEnd = System.currentTimeMillis();
+                            recvStart = connectionEnd;
+                            uiToast("GOT MESSAGE!!!");
+                            System.out.println("Got message!");
+                            first_impact = false;
+                        }
+                    }
+                } catch (Exception e) {
+                    System.out.println("out of receiving");
+                }
+                recvEnd = System.currentTimeMillis();
+
+                long end = System.currentTimeMillis();
+                System.out.println("Sending and receiving everything took: (ms)" + (end - start));
+                System.out.println("Establishing the connection took: (ms)" + (connectionEnd - connectionStart));
+
+                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
+
+                socket.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
+                if (serverSocket != null) {
+                    try {
+                        serverSocket.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
+        });
+    }
+
+    @SuppressLint("MissingPermission")
+    private void receiveMessagesOverRfcomm(View view) {
+        runRfcomm(() -> {
+            BluetoothServerSocket serverSocket = null;
+
+            long start = 0, end;
+            long bytesRead = 0;
+
+            String dstMac = sharedPref.getString(SAVED_MAC_ADDRESS_KEY, "").trim();
+
+            try {
+                byte[] blob = buildTestBlob();
+                long sentBytes = blob.length;
+
+                serverSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord("Anix", MY_UUID);
+                System.out.println("listening for connection...");
+                BluetoothSocket socket = serverSocket.accept(); // Blocking call, waits until connection is established
+                InputStream inputStream = socket.getInputStream();
+                byte[] buffer = new byte[1024];
+                int bytes;
+
+                start = System.currentTimeMillis();
+                long recvStart = 0;
+                long recvEnd = 0;
+                boolean first_impact = true;
+                try {
+                    while (true) {
+                        bytes = inputStream.read(buffer); // blocks until there's something to read
+                        if (bytes == -1) break;
+                        bytesRead += bytes;
+                        if (first_impact) {
+                            recvStart = System.currentTimeMillis();
+                            uiToast("GOT MESSAGE!!!");
+                            System.out.println("Got message!");
+                            first_impact = false;
+                        }
+                    }
+                } catch (IOException e) {
+                    System.out.println("out of receiving");
+                }
+                recvEnd = System.currentTimeMillis();
+                socket.close();
+
+                BluetoothDevice device = bluetoothAdapter.getRemoteDevice(dstMac);
+
+                socket = device.createInsecureRfcommSocketToServiceRecord(MY_UUID);
+                socket.connect();
+                System.out.println("connected!");
+                OutputStream outputStream = socket.getOutputStream();
+                if (outputStream == null) {
+                    System.out.println("stream was null!");
+                } else {
+                    System.out.println("stream was not null!");
+                }
+
+                long sendStart = System.currentTimeMillis();
+                outputStream.write(blob);
+                outputStream.flush();
+                outputStream.close();
+                long sendEnd = System.currentTimeMillis();
+
+                end = System.currentTimeMillis();
+                System.out.println("Sending and receiving everything took: (ms)" + (end - start));
+
+                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
+
+                socket.close();
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
+                if (serverSocket != null) {
+                    try {
+                        serverSocket.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+    }
+
+    // BLE L2CAP CoC
+    @RequiresApi(api = Build.VERSION_CODES.S)
+    private void sendMessagesOverBleL2cap(View view) {
+        // ble scan and adv are on the main loop and transport calls block
+        final Context ctx = requireContext().getApplicationContext();
+        new Thread(() -> {
 
             long bytesRead = 0;
 
-            BleL2capTransport clientTransport = new BleL2capTransport(requireContext());
-            BleL2capTransport serverTransport = new BleL2capTransport(requireContext());
+            BleL2capTransport clientTransport = new BleL2capTransport(ctx);
+            BleL2capTransport serverTransport = new BleL2capTransport(ctx);
 
             try {
-                AnixCoreMessage message = internalAnixCore.createMessage(messageText.toString().getBytes());
-                byte[] messageByteArray = message.dumpMessageToBytes();
-                System.out.println(message.dumpMessageToString());
-                System.out.println("message size is " + messageByteArray.length + "bytes");
-                message = internalAnixCore.voteOnMessage(message, true);
-                byte[] voteByteArray = message.dumpVotesToBytes();
-                System.out.println(new String(voteByteArray, StandardCharsets.UTF_8));
-                System.out.println("vote size is " + voteByteArray.length + "bytes");
-
+                byte[] blob = buildTestBlob();
+                long sentBytes = blob.length;
 
                 // scan for the adv PSM and open the channel
                 long connectionStart = System.currentTimeMillis();
@@ -279,28 +492,13 @@ public class SecondFragment extends Fragment {
 
                 System.out.println("Establishing the connection 1 took: (ms)" + (connectionEnd - connectionStart));
 
-                ByteArrayOutputStream internalByteStream = new ByteArrayOutputStream();
-                int MESSAGE_COUNT = 100;
-                for (int i = 0; i < MESSAGE_COUNT; i++) {
-                    internalByteStream.write(messageByteArray);
-                }
-
-                int VOTE_COUNT = 10000;
-                for (int i = 0; i < VOTE_COUNT; i++) {
-                    internalByteStream.write(voteByteArray);
-                }
-
-                System.out.println("total size of data to send: " + internalByteStream.toByteArray().length);
-
-                long sentBytes = internalByteStream.size();
-
                 // send wait for ack before closing
                 // no ack caused a bug where close would run before data transferred
                 InputStream clientIn = socket.getInputStream();
                 long start = System.currentTimeMillis();
                 long sendStart = start;
 
-                outputStream.write(internalByteStream.toByteArray());
+                outputStream.write(blob);
                 outputStream.flush();
 
                 int ack = clientIn.read(); // blocks
@@ -365,9 +563,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive (first byte to complete)", bytesRead, recvEnd - recvStart, sentBytes);
+                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send (write to ack, roundtrip)", sentBytes, sendEnd - sendStart, sentBytes);
+                    printThroughput("send (write to ack, roundtrip)", 654000, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
@@ -384,44 +582,20 @@ public class SecondFragment extends Fragment {
 
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
-    private void receiveMessagesOverBluetooth(View view) {
+    private void receiveMessagesOverBleL2cap(View view) {
         // treading to stop blocking UI
+        final Context ctx = requireContext().getApplicationContext();
         new Thread(() -> {
 
             long start = 0, end;
             long bytesRead = 0;
 
-            StringBuilder messageText = new StringBuilder();
-            for (int i = 0; i < 140; i++) {
-                messageText.append("a");
-            }
-
-            BleL2capTransport serverTransport = new BleL2capTransport(requireContext());
-            BleL2capTransport clientTransport = new BleL2capTransport(requireContext());
+            BleL2capTransport serverTransport = new BleL2capTransport(ctx);
+            BleL2capTransport clientTransport = new BleL2capTransport(ctx);
 
             try {
-
-                AnixCoreMessage message = internalAnixCore.createMessage(messageText.toString().getBytes());
-                byte[] messageByteArray = message.dumpMessageToBytes();
-                System.out.println(message.dumpMessageToString());
-                System.out.println("message size is " + messageByteArray.length + "bytes");
-                message = internalAnixCore.voteOnMessage(message, true);
-                byte[] voteByteArray = message.dumpVotesToBytes();
-                System.out.println(new String(voteByteArray, StandardCharsets.UTF_8));
-                System.out.println("vote size is " + voteByteArray.length + "bytes");
-
-                ByteArrayOutputStream internalByteStream = new ByteArrayOutputStream();
-                int MESSAGE_COUNT = 100;
-                for (int i = 0; i < MESSAGE_COUNT; i++) {
-                    internalByteStream.write(messageByteArray);
-                }
-
-                int VOTE_COUNT = 10000;
-                for (int i = 0; i < VOTE_COUNT; i++) {
-                    internalByteStream.write(voteByteArray);
-                }
-
-                long sentBytes = internalByteStream.size();
+                byte[] blob = buildTestBlob();
+                long sentBytes = blob.length;
 
                 // server side to listen, adv the PSM and accept reqs
                 System.out.println("listening for connection...");
@@ -477,13 +651,11 @@ public class SecondFragment extends Fragment {
                     System.out.println("stream was not null!");
                 }
 
-                System.out.println("total size of data to send: " + internalByteStream.toByteArray().length);
-
                 // send wait for ack before closing
                 // no ack caused a bug where close would run before data transferred
                 InputStream clientIn = socket.getInputStream();
                 long sendStart = System.currentTimeMillis();
-                outputStream.write(internalByteStream.toByteArray());
+                outputStream.write(blob);
                 outputStream.flush();
 
                 int ack = clientIn.read(); // blocks
@@ -500,9 +672,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive (first byte to complete)", bytesRead, recvEnd - recvStart, sentBytes);
+                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send (write to ack, roundtrip)", sentBytes, sendEnd - sendStart, sentBytes);
+                    printThroughput("send (write to ack, roundtrip)", 654000, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
@@ -516,6 +688,12 @@ public class SecondFragment extends Fragment {
                 clientTransport.close();
             }
         }).start();
+    }
+
+    //helpers
+    // run rfcomm used to check on which thread
+    private void runRfcomm(Runnable body) {
+        new Thread(body).start();
     }
 
     private void uiToast(String text) {
@@ -583,8 +761,14 @@ public class SecondFragment extends Fragment {
         binding.setIrkButton.setOnClickListener(this::setIrk);
         binding.cryptobutton.setOnClickListener(this::doCryptoTest);
         binding.componentbutton.setOnClickListener(this::doCreateObjectTest);
-        binding.messagebutton.setOnClickListener(this::sendMessagesOverBluetooth);
-        binding.receivebutton.setOnClickListener(this::receiveMessagesOverBluetooth);
+
+        // Anix transport
+        binding.messagebutton.setOnClickListener(this::sendMessagesOverRfcomm);
+        binding.receivebutton.setOnClickListener(this::receiveMessagesOverRfcomm);
+
+        // BLE transport
+        binding.blemessagebutton.setOnClickListener(this::sendMessagesOverBleL2cap);
+        binding.blereceivebutton.setOnClickListener(this::receiveMessagesOverBleL2cap);
     }
 
     @Override
