@@ -357,7 +357,7 @@ public class SecondFragment extends Fragment {
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
                 System.out.println("Establishing the connection took: (ms)" + (connectionEnd - connectionStart));
 
-                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
                 printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
 
                 socket.close();
@@ -439,7 +439,7 @@ public class SecondFragment extends Fragment {
                 end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
 
-                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
                 printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
 
                 socket.close();
@@ -563,9 +563,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send (write to ack, roundtrip)", 654000, sendEnd - sendStart, sentBytes);
+                    printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
@@ -672,9 +672,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive (first byte to complete)", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send (write to ack, roundtrip)", 654000, sendEnd - sendStart, sentBytes);
+                    printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
