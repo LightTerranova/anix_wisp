@@ -20,6 +20,7 @@ import androidx.annotation.RequiresApi;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
@@ -64,10 +65,10 @@ public class BleL2capTransport {
     // opens an L2CAP listening channel, adv PSM and block until connected
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
-    public BluetoothSocket startServerAndAccept() throws IOException {
+    public BluetoothSocket startServerAndAccept() throws Exception {
         serverSocket = adapter.listenUsingInsecureL2capChannel();
         int psm = serverSocket.getPsm();
-        System.out.println("L2CAP listening on PSM " + psm);
+        System.out.println("L2CAP listening on PSM " + psm + " unencrypted");
 
         startAdvertising(psm);
 
@@ -163,7 +164,14 @@ public class BleL2capTransport {
                         continue;
                     }
 
-                    int psm = ByteBuffer.wrap(value).getShort() & 0xFFFF;
+                    // using UUID to decrypt psm
+                    int psm;
+                    try {
+                        psm = PsmCipher.decrypt(value, candidate, irk);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+
                     // Take the first server
                     if (foundDevice.compareAndSet(null, result.getDevice())) {
                         foundPsm.set(psm);
@@ -200,7 +208,7 @@ public class BleL2capTransport {
     // BLE adv and scan helpers from Shroud L2CAP
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
-    private void startAdvertising(int psm) throws IOException {
+    private void startAdvertising(int psm) throws Exception {
         byte[] irk = IrkStore.getIrk();
         // new prand every time
         try {
@@ -211,7 +219,10 @@ public class BleL2capTransport {
         ParcelUuid advUuid = new ParcelUuid(currentAdvertisedUuid);
         System.out.println("Advertising under resolvable UUID " + currentAdvertisedUuid);
 
-        byte[] psmBytes = ByteBuffer.allocate(2).putShort((short) psm).array();
+        // UUID is nonce for CTR
+        byte[] psmBytes;
+        psmBytes = PsmCipher.encrypt(psm, currentAdvertisedUuid, irk);
+        System.out.println("L2CAP listening on PSM " + Arrays.toString(psmBytes) + " encrypted");
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
