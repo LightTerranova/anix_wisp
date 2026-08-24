@@ -48,6 +48,7 @@ import java.security.PublicKey;
 import java.security.Security;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.UUID;
 
 public class SecondFragment extends Fragment {
@@ -63,6 +64,8 @@ public class SecondFragment extends Fragment {
 
     // How long the client scans for server before giving up
     private static final long SCAN_TIMEOUT_MS = 30000;
+
+    private long goodputBytes;
 
     // Takes whatever is in the IRK box
     private void setIrk(View view) {
@@ -249,8 +252,12 @@ public class SecondFragment extends Fragment {
 
     // builds message
     private byte[] buildTestBlob() throws Exception {
+        final int MESSAGE_COUNT = 100;
+        final int VOTE_COUNT = 10000;
+        final int PAYLOAD_BYTES = 140;
+
         StringBuilder messageText = new StringBuilder();
-        for (int i = 0; i < 140; i++) {
+        for (int i = 0; i < PAYLOAD_BYTES; i++) {
             messageText.append("a");
         }
 
@@ -264,15 +271,19 @@ public class SecondFragment extends Fragment {
         System.out.println("vote size is " + voteByteArray.length + "bytes");
 
         ByteArrayOutputStream internalByteStream = new ByteArrayOutputStream();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < MESSAGE_COUNT; i++) {
             internalByteStream.write(messageByteArray);
         }
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < VOTE_COUNT; i++) {
             internalByteStream.write(voteByteArray);
         }
 
         int bytesSent = internalByteStream.size();
+
+        goodputBytes = (long) MESSAGE_COUNT * PAYLOAD_BYTES + (long) VOTE_COUNT * voteByteArray.length;
+
         System.out.println("total size of data to send: " + bytesSent);
+        System.out.println("goodput bytes (messages and votes): " + goodputBytes + "  other bytes: " + (bytesSent - goodputBytes) + " B");
         return internalByteStream.toByteArray();
     }
 
@@ -357,9 +368,8 @@ public class SecondFragment extends Fragment {
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
                 System.out.println("Establishing the connection took: (ms)" + (connectionEnd - connectionStart));
 
-                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
-                printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
-
+                printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
+                printThroughput("send",    goodputBytes, sendEnd - sendStart, sentBytes);
                 socket.close();
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -439,8 +449,8 @@ public class SecondFragment extends Fragment {
                 end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
 
-                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
-                printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
+                printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
+                printThroughput("send",    goodputBytes, sendEnd - sendStart, sentBytes);
 
                 socket.close();
 
@@ -563,9 +573,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
+                    printThroughput("send", goodputBytes, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
@@ -672,9 +682,9 @@ public class SecondFragment extends Fragment {
                 // Throughput calculations
                 // receive is first inbound byte to last
                 // send is write->ACK which includes the ACK transmissions
-                printThroughput("receive", 654000, recvEnd - recvStart, sentBytes);
+                printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
                 if (sendAcked) {
-                    printThroughput("send", 654000, sendEnd - sendStart, sentBytes);
+                    printThroughput("send", goodputBytes, sendEnd - sendStart, sentBytes);
                 } else {
                     System.out.println("Throughput [send]: skipped (no ACK from receiver)");
                 }
@@ -703,11 +713,13 @@ public class SecondFragment extends Fragment {
         }
     }
 
-    // Prints throughput in Mbps
+    // Prints throughput in kBps
     private void printThroughput(String direction, long bytes, long elapsedMs, long expectedBytes) {
-        double mbps = (bytes * 8.0) / (elapsedMs / 1000.0) / 1_000_000.0;
-        System.out.println("Throughput [" + direction + "]: " + mbps
-                + " Mbps (" + bytes + " bytes in " + elapsedMs + " ms)");
+        if (Objects.equals(direction, "receive")) {
+            double kBps = (bytes / 1000.0) / (elapsedMs / 1000.0);
+            System.out.println("Receiver Goodput: " + kBps + " kBps " + "(" + bytes + " bytes in " + elapsedMs + " ms" + ")");
+            System.out.println("Total Sent Bytes: " + expectedBytes);
+        }
     }
 
     @Override
