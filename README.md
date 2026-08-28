@@ -33,4 +33,7 @@ Fork of the [Anix](https://cs.uwaterloo.ca/~s4kamali/paperfiles/kamali-sp25.pdf)
 2. Enter an IRK manually or use the existing one
 3. Click "Set IRK"
 4. Click "BLE Receive" on one device
-5. CLick "BLE Message Test" on the other device
+5. Click "BLE Message Test" on the other device
+
+## Results
+The logs of runs used for our throughput results can be found at the top level of this repository in a file called “All Experiments Final.txt”
