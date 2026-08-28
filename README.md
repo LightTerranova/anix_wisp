@@ -13,6 +13,7 @@ Fork of the [Anix](https://cs.uwaterloo.ca/~s4kamali/paperfiles/kamali-sp25.pdf)
 3. Sync Gradle
 4. Connect two Android devices via USB or WiFi Debugging
 5. Run the application
+6. Allow all permissions
 
 ## Sending via Bluetooth Classic (Anix)
 1. Find the MAC Address of both devices by going to Settings -> About Phone -> Status Information -> Bluetooth Address
