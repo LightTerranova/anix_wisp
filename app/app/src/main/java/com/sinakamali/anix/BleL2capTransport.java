@@ -19,7 +19,6 @@ import android.os.ParcelUuid;
 import androidx.annotation.RequiresApi;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -51,15 +50,26 @@ public class BleL2capTransport {
 
     private final BluetoothAdapter adapter;
 
+    // whether we are using private or public mode
+    private final boolean secureMode;
+
+    // static uuid
+    private static final UUID STATIC_UUID = UUID.fromString("7a4e2c10-9b3f-4a1d-8e6b-0f2c5d7a9b1e");
+
     private BluetoothServerSocket serverSocket;
     private AdvertiseCallback advertiseCallback;
     private ScanCallback scanCallback;
     private UUID currentAdvertisedUuid;
 
     public BleL2capTransport(Context context) {
+        this(context, true);
+    }
+
+    public BleL2capTransport(Context context, boolean secureMode) {
         BluetoothManager manager =
                 (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         this.adapter = manager.getAdapter();
+        this.secureMode = secureMode;
     }
 
     // opens an L2CAP listening channel, adv PSM and block until connected
@@ -126,7 +136,7 @@ public class BleL2capTransport {
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
     private DiscoveredServer scanForServer(long timeoutMillis) throws Exception {
-        final byte[] irk = IrkStore.getIrk();
+        final byte[] irk = secureMode ? IrkStore.getIrk() : null;
 
         final AtomicReference<BluetoothDevice> foundDevice = new AtomicReference<>(null);
         final AtomicReference<Integer> foundPsm = new AtomicReference<>(null);
@@ -159,17 +169,24 @@ public class BleL2capTransport {
                     if (rejected.contains(candidate)) {
                         continue;
                     }
-                    if (!ResolvableUuid.resolve(candidate, irk)) {
-                        rejected.add(candidate);
-                        continue;
-                    }
 
-                    // using UUID to decrypt psm
                     int psm;
-                    try {
-                        psm = PsmCipher.decrypt(value, candidate, irk);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
+                    if (secureMode) {
+                        if (!ResolvableUuid.resolve(candidate, irk)) {
+                            rejected.add(candidate);
+                            continue;
+                        }
+                        try {
+                            psm = PsmCipher.decrypt(value, candidate, irk);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    } else {
+                        if (!candidate.equals(STATIC_UUID)) {
+                            rejected.add(candidate);
+                            continue;
+                        }
+                        psm = ((value[0] & 0xFF) << 8) | (value[1] & 0xFF);
                     }
 
                     // Take the first server
@@ -209,20 +226,30 @@ public class BleL2capTransport {
     @SuppressLint("MissingPermission")
     @RequiresApi(api = Build.VERSION_CODES.S)
     private void startAdvertising(int psm) throws Exception {
-        byte[] irk = IrkStore.getIrk();
-        // new prand every time
-        try {
-            currentAdvertisedUuid = ResolvableUuid.generate(irk);
-        } catch (Exception e) {
-            throw new IOException("Failed to derive resolvable UUID", e);
-        }
-        ParcelUuid advUuid = new ParcelUuid(currentAdvertisedUuid);
-        System.out.println("Advertising under resolvable UUID " + currentAdvertisedUuid);
-
-        // UUID is nonce for CTR
         byte[] psmBytes;
-        psmBytes = PsmCipher.encrypt(psm, currentAdvertisedUuid, irk);
-        System.out.println("L2CAP listening on PSM " + Arrays.toString(psmBytes) + " encrypted");
+
+        if (secureMode) {
+            byte[] irk = IrkStore.getIrk();
+            // new prand every time
+            try {
+                currentAdvertisedUuid = ResolvableUuid.generate(irk);
+            } catch (Exception e) {
+                throw new IOException("Failed to derive resolvable UUID", e);
+            }
+            System.out.println("Advertising under resolvable UUID " + currentAdvertisedUuid);
+
+            // UUID is nonce for CTR
+            psmBytes = PsmCipher.encrypt(psm, currentAdvertisedUuid, irk);
+            System.out.println("L2CAP listening on PSM " + Arrays.toString(psmBytes) + " encrypted");
+        } else {
+            currentAdvertisedUuid = STATIC_UUID;
+            System.out.println("Advertising public " + currentAdvertisedUuid);
+
+            psmBytes = new byte[]{(byte) ((psm >>> 8) & 0xFF), (byte) (psm & 0xFF)};
+            System.out.println("L2CAP PSM " + psm + " unencrypted");
+        }
+
+        ParcelUuid advUuid = new ParcelUuid(currentAdvertisedUuid);
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)

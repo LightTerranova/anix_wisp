@@ -472,6 +472,15 @@ public class SecondFragment extends Fragment {
         });
     }
 
+    private boolean useSecureBleMode = true;
+    private void toggleBleSecurityMode(View view) {
+        useSecureBleMode = !useSecureBleMode;
+        String modeDesc = useSecureBleMode ? "Secure" : "Plain";
+        binding.toggleSecurityButton.setText(modeDesc);
+        Toast.makeText(getActivity(), "BLE mode: " + modeDesc, Toast.LENGTH_SHORT).show();
+        System.out.println("BLE security mode toggled" + modeDesc);
+    }
+
     // BLE L2CAP CoC
     @RequiresApi(api = Build.VERSION_CODES.S)
     private void sendMessagesOverBleL2cap(View view) {
@@ -481,8 +490,8 @@ public class SecondFragment extends Fragment {
 
             long bytesRead = 0;
 
-            BleL2capTransport clientTransport = new BleL2capTransport(ctx);
-            BleL2capTransport serverTransport = new BleL2capTransport(ctx);
+            BleL2capTransport clientTransport = new BleL2capTransport(ctx, useSecureBleMode);
+            BleL2capTransport serverTransport = new BleL2capTransport(ctx, useSecureBleMode);
 
             try {
                 byte[] blob = buildTestBlob();
@@ -604,8 +613,8 @@ public class SecondFragment extends Fragment {
             long start = 0, end;
             long bytesRead = 0;
 
-            BleL2capTransport serverTransport = new BleL2capTransport(ctx);
-            BleL2capTransport clientTransport = new BleL2capTransport(ctx);
+            BleL2capTransport serverTransport = new BleL2capTransport(ctx, useSecureBleMode);
+            BleL2capTransport clientTransport = new BleL2capTransport(ctx, useSecureBleMode);
 
             try {
                 byte[] blob = buildTestBlob();
@@ -774,6 +783,8 @@ public class SecondFragment extends Fragment {
         if (IrkStore.isSet()) {
             binding.irkInput.setHint("IRK already set this session");
         }
+
+        binding.toggleSecurityButton.setOnClickListener(this::toggleBleSecurityMode);
 
         binding.setIrkButton.setOnClickListener(this::setIrk);
         binding.cryptobutton.setOnClickListener(this::doCryptoTest);
