@@ -107,7 +107,7 @@
             android:text="Toggle Security"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/irkInput" />
+            app:layout_constraintTop_toBottomOf="@+id/setIrkButton" />
 
         <Button
             android:id="@+id/blemessagebutton"
@@ -117,7 +117,7 @@
             android:text="BLE Message Test"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/setIrkButton" />
+            app:layout_constraintTop_toBottomOf="@+id/toggleSecurityButton" />
 
         <Button
             android:id="@+id/blereceivebutton"
