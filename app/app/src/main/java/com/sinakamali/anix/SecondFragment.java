@@ -367,6 +367,7 @@ public class SecondFragment extends Fragment {
                 long end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
                 System.out.println("Establishing the connection took: (ms)" + (connectionEnd - connectionStart));
+                uiToast("Sending and receiving everything took: (ms)" + (end - start));
 
                 printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
                 printThroughput("send",    goodputBytes, sendEnd - sendStart, sentBytes);
@@ -448,6 +449,7 @@ public class SecondFragment extends Fragment {
 
                 end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
+                uiToast("Sending and receiving everything took: (ms)" + (end - start));
 
                 printThroughput("receive", goodputBytes, recvEnd - recvStart, sentBytes);
                 printThroughput("send",    goodputBytes, sendEnd - sendStart, sentBytes);
@@ -501,6 +503,7 @@ public class SecondFragment extends Fragment {
                 connectionEnd = System.currentTimeMillis();
 
                 System.out.println("Establishing the connection 1 took: (ms)" + (connectionEnd - connectionStart));
+                uiToast("Establishing the connection 1 took: (ms)" + (connectionEnd - connectionStart));
 
                 // send wait for ack before closing
                 // no ack caused a bug where close would run before data transferred
@@ -569,6 +572,7 @@ public class SecondFragment extends Fragment {
                 long end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
                 System.out.println("Establishing the connection took: (ms)" + (connectionEnd - connectionStart));
+                uiToast("Sending and receiving everything took: (ms)" + (end - start));
 
                 // Throughput calculations
                 // receive is first inbound byte to last
@@ -678,6 +682,7 @@ public class SecondFragment extends Fragment {
 
                 end = System.currentTimeMillis();
                 System.out.println("Sending and receiving everything took: (ms)" + (end - start));
+                uiToast("Sending and receiving everything took: (ms)" + (end - start));
 
                 // Throughput calculations
                 // receive is first inbound byte to last
